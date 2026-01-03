@@ -120,9 +120,9 @@ def score_entry(entry: dict, benchmark: str) -> Dict[str, Any]:
             is_correct = verify_multiple_choice(ground_truth, predicted)
         elif parent_category == "math":
             gt_str = entry.get("answer", "")
-            ground_truth = parse(f"${gt_str}$")
-            predicted = parse(entry.get("response", ""))
-            is_correct = verify(ground_truth, predicted)
+            ground_truth = parse(f"${gt_str}$", parsing_timeout=30)
+            predicted = parse(entry.get("response", ""), parsing_timeout=30)
+            is_correct = verify(ground_truth, predicted, timeout_seconds=30)
         elif benchmark in ["bfcl-v1", "bfcl-v2"]:
             predicted, ground_truth, is_correct = evaluate_bfcl_entry(entry)
         elif benchmark == "meta-tool":

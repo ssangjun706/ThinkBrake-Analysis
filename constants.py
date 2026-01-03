@@ -50,6 +50,7 @@ BENCHMARK_SIZES = {
     "bfcl-v1": 1150,
     "bfcl-v2": 1351,
     "meta-tool": 1492,
+    "gsm8k-val": 1300,
 }
 
 # Parent category mappings
@@ -64,6 +65,7 @@ PARENT_CATEGORIES = {
     "bfcl-v1": "tool",
     "bfcl-v2": "tool",
     "meta-tool": "tool",
+    "gsm8k-val": "math",
 }
 
 # Methods that require thresholds
