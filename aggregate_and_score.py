@@ -322,9 +322,9 @@ def calculate_metrics_for_group(entries: List[Dict], benchmark: str) -> Dict[str
                     problem_entries, key=lambda x: x.get("trial", 1)
                 )
                 first_8 = sorted_entries[:8]
-                if len(first_8) == 8:
+                if len(first_8) > 0:
                     n_correct = sum(1 for e in first_8 if e.get("is_correct", False))
-                    avg_at_8 += n_correct / 8
+                    avg_at_8 += n_correct / len(first_8)
 
             result["avg@8"] = (avg_at_8 / num_problems) * 100
 
