@@ -1,19 +1,9 @@
-"""
-Aggregate all data from output directories, score each entry, and save to CSV.
-Then calculate metrics and save to JSONL.
-
-Usage:
-    python aggregate_and_score.py                     # Include sub-category breakdown (default)
-    python aggregate_and_score.py --no-bfcl-breakdown # Skip sub-category breakdown
-"""
-
 import json
 import csv
-import re
 import logging
 import argparse
 from pathlib import Path
-from collections import defaultdict
+from collections import defaultdict, Counter
 from typing import Dict, List, Any, Optional, Tuple
 
 from math_verify import parse, verify
@@ -21,7 +11,6 @@ from math_verify import parse, verify
 from constants import (
     OUTPUT_DIRS,
     BENCHMARK_SIZES,
-    THRESHOLD_METHODS,
     EXTENDED_METRICS_BENCHMARKS,
     BFCL_SUBCATEGORY_MAP,
     BFCL_SUBCATEGORY_SIZES,
@@ -45,16 +34,8 @@ logger = logging.getLogger(__name__)
 
 
 def parse_file_path(file_path: Path) -> Optional[Dict[str, Any]]:
-    """
-    Parse a file path to extract model, method, threshold, benchmark, and category.
-
-    Expected path patterns:
-    - output/<model>/<category>/<method>/<benchmark>_result.jsonl
-    - output/<model>/<category>/<method>/threshold_<val>/<benchmark>_result.jsonl
-    """
     parts = file_path.parts
     try:
-        # Find index of output folder (output or output_others)
         output_idx = None
         for i, part in enumerate(parts):
             if part in ("output", "output_others"):
@@ -67,8 +48,6 @@ def parse_file_path(file_path: Path) -> Optional[Dict[str, Any]]:
         model = parts[output_idx + 1]
         category = parts[output_idx + 2]
         method = parts[output_idx + 3]
-
-        # Check if there's a threshold folder
         remaining = parts[output_idx + 4 :]
         threshold = None
 
@@ -83,7 +62,6 @@ def parse_file_path(file_path: Path) -> Optional[Dict[str, Any]]:
         else:
             return None
 
-        # Extract benchmark from filename
         benchmark = filename.replace("_result.jsonl", "")
 
         return {
@@ -100,13 +78,6 @@ def parse_file_path(file_path: Path) -> Optional[Dict[str, Any]]:
 
 
 def collect_all_files() -> Dict[Tuple, Path]:
-    """
-    Collect all JSONL files from output directories.
-    Returns a dict mapping (model, method, threshold, benchmark) -> file_info.
-    Later directories override earlier ones for duplicates.
-
-    Applies filtering based on EXCLUDED_MODELS and EXCLUDED_BENCHMARKS.
-    """
     files_map = {}
 
     for output_dir in OUTPUT_DIRS:
@@ -130,21 +101,13 @@ def collect_all_files() -> Dict[Tuple, Path]:
             if benchmark in EXCLUDED_BENCHMARKS:
                 continue
 
-            key = (
-                model,
-                method,
-                parsed["threshold"],
-                benchmark,
-            )
+            key = (model, method, parsed["threshold"], benchmark)
             files_map[key] = parsed
 
     return files_map
 
 
 def score_entry(entry: dict, benchmark: str) -> Dict[str, Any]:
-    """
-    Score a single entry and return scoring result.
-    """
     parent_category = get_parent_category(benchmark)
     is_correct = False
     predicted = None
@@ -177,9 +140,6 @@ def score_entry(entry: dict, benchmark: str) -> Dict[str, Any]:
 
 
 def process_file(file_info: Dict) -> List[Dict]:
-    """
-    Process a single JSONL file and return scored entries.
-    """
     file_path = file_info["file_path"]
     benchmark = file_info["benchmark"]
     model = file_info["model"]
@@ -223,9 +183,6 @@ def process_file(file_info: Dict) -> List[Dict]:
 
 
 def aggregate_and_score_all() -> List[Dict]:
-    """
-    Aggregate all data from output directories and score each entry.
-    """
     files_map = collect_all_files()
     logger.info(
         f"Found {len(files_map)} unique (model, method, threshold, benchmark) combinations"
@@ -243,9 +200,6 @@ def aggregate_and_score_all() -> List[Dict]:
 
 
 def save_to_csv(entries: List[Dict], output_path: Path):
-    """
-    Save scored entries to CSV.
-    """
     if not entries:
         logger.warning("No entries to save")
         return
@@ -274,9 +228,6 @@ def save_to_csv(entries: List[Dict], output_path: Path):
 
 
 def calculate_metrics_for_group(entries: List[Dict], benchmark: str) -> Dict[str, Any]:
-    """
-    Calculate metrics for a group of entries.
-    """
     if not entries:
         return {}
 
@@ -285,7 +236,6 @@ def calculate_metrics_for_group(entries: List[Dict], benchmark: str) -> Dict[str
         logger.warning(f"Unknown benchmark size for {benchmark}")
         return {}
 
-    # Group by problem_id
     problems = defaultdict(list)
     for entry in entries:
         problems[entry["problem_id"]].append(entry)
@@ -299,12 +249,10 @@ def calculate_metrics_for_group(entries: List[Dict], benchmark: str) -> Dict[str
 
     max_trials = max(all_trials) if all_trials else 1
 
-    # Count entries per trial
     trial_counts = defaultdict(int)
     for entry in entries:
         trial_counts[entry.get("trial", 1)] += 1
 
-    # Check data validity
     valid_for_metrics = True
     if num_problems != expected_size:
         logger.warning(
@@ -312,10 +260,8 @@ def calculate_metrics_for_group(entries: List[Dict], benchmark: str) -> Dict[str
         )
         valid_for_metrics = False
 
-    # Calculate total stats regardless of validity
     total_entries = len(entries)
     total_tokens = sum(e.get("token_count", 0) for e in entries)
-    total_correct = sum(1 for e in entries if e.get("is_correct", False))
 
     result = {
         "total_entries": total_entries,
@@ -326,7 +272,6 @@ def calculate_metrics_for_group(entries: List[Dict], benchmark: str) -> Dict[str
         "valid_for_metrics": valid_for_metrics,
     }
 
-    # Calculate average accuracy (mean of per-problem accuracy) even if data is incomplete
     sum_accuracy = 0.0
     for problem_id, problem_entries in problems.items():
         n = len(problem_entries)
@@ -335,9 +280,7 @@ def calculate_metrics_for_group(entries: List[Dict], benchmark: str) -> Dict[str
 
     result["accuracy"] = (sum_accuracy / num_problems) * 100
 
-    # Extended metrics only for supported benchmarks
     if benchmark in EXTENDED_METRICS_BENCHMARKS:
-        # Pass@k (default k=1, optional k=5)
         ks_to_compute = [1]
         if max_trials >= 5:
             ks_to_compute.append(5)
@@ -353,11 +296,7 @@ def calculate_metrics_for_group(entries: List[Dict], benchmark: str) -> Dict[str
 
         result["pass@k"] = pass_at_k
 
-        # Majority@k and Avg@k (optional, only if n-rollouts available)
         if max_trials >= 8:
-            # Majority accuracy
-            from collections import Counter
-
             majority_correct = 0
             for problem_id, problem_entries in problems.items():
                 predictions = [
@@ -368,7 +307,6 @@ def calculate_metrics_for_group(entries: List[Dict], benchmark: str) -> Dict[str
                 if predictions:
                     counter = Counter(predictions)
                     most_common_pred = counter.most_common(1)[0][0]
-                    # Check if majority prediction is correct
                     for e in problem_entries:
                         if str(e.get("predicted", "")) == most_common_pred and e.get(
                             "is_correct", False
@@ -378,7 +316,6 @@ def calculate_metrics_for_group(entries: List[Dict], benchmark: str) -> Dict[str
 
             result["majority_accuracy"] = (majority_correct / num_problems) * 100
 
-            # Avg@n (average accuracy using first n trials)
             avg_at_8 = 0.0
             for problem_id, problem_entries in problems.items():
                 sorted_entries = sorted(
@@ -397,14 +334,9 @@ def calculate_metrics_for_group(entries: List[Dict], benchmark: str) -> Dict[str
 def calculate_metrics_for_subcategory(
     entries: List[Dict], benchmark: str, subcategory: str
 ) -> Dict[str, Any]:
-    """
-    Calculate metrics for a specific sub-category within a benchmark.
-    Supports both BFCL and MetaTool benchmarks.
-    """
     if not entries:
         return {}
 
-    # Get expected size for this sub-category
     if benchmark == "meta-tool":
         expected_size = METATOOL_SUBCATEGORY_SIZES.get(subcategory)
     else:
@@ -415,14 +347,12 @@ def calculate_metrics_for_subcategory(
         logger.warning(f"Unknown sub-category size for {benchmark}/{subcategory}")
         return {}
 
-    # Group by problem_id
     problems = defaultdict(list)
     for entry in entries:
         problems[entry["problem_id"]].append(entry)
 
     num_problems = len(problems)
 
-    # Check validity
     valid_for_metrics = num_problems == expected_size
     if not valid_for_metrics:
         logger.warning(
@@ -441,7 +371,6 @@ def calculate_metrics_for_subcategory(
         "valid_for_metrics": valid_for_metrics,
     }
 
-    # Calculate accuracy even if data is incomplete
     sum_accuracy = 0.0
     for problem_id, problem_entries in problems.items():
         n = len(problem_entries)
@@ -456,14 +385,6 @@ def calculate_metrics_for_subcategory(
 def calculate_all_metrics(
     entries: List[Dict], bfcl_breakdown: bool = False
 ) -> List[Dict]:
-    """
-    Calculate metrics for all model/method/threshold/benchmark combinations.
-
-    Args:
-        entries: List of scored entries
-        bfcl_breakdown: If True, also calculate metrics per BFCL sub-category
-    """
-    # Group entries
     groups = defaultdict(list)
     for entry in entries:
         key = (
@@ -479,7 +400,6 @@ def calculate_all_metrics(
     for key, group_entries in groups.items():
         model, method, threshold, benchmark = key
 
-        # Calculate overall benchmark metrics
         metrics = calculate_metrics_for_group(group_entries, benchmark)
         if not metrics:
             continue
@@ -540,9 +460,6 @@ def calculate_all_metrics(
 
 
 def save_metrics_to_jsonl(metrics: List[Dict], output_path: Path):
-    """
-    Save metrics to JSONL file.
-    """
     with open(output_path, "w", encoding="utf-8") as f:
         for record in metrics:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -551,7 +468,6 @@ def save_metrics_to_jsonl(metrics: List[Dict], output_path: Path):
 
 
 def parse_args():
-    """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         description="Aggregate LLM response data, score, and calculate metrics."
     )
@@ -571,9 +487,6 @@ def parse_args():
 
 
 def main():
-    """
-    Main function to aggregate, score, and calculate metrics.
-    """
     args = parse_args()
 
     logger.info("Starting data aggregation and scoring...")
