@@ -148,7 +148,7 @@ MODEL_THRESHOLDS = {
     "Qwen_Qwen3-32B": 0.25,
     "deepseek-ai_DeepSeek-R1-Distill-Llama-8B": 1.0,
     "microsoft_phi-4-reasoning": 0.1,
-    "microsoft_phi-4-reasoning-plus: 0.1,
+    "microsoft_phi-4-reasoning-plus": 0.1,
 }
 
 # Default threshold if model not in MODEL_THRESHOLDS
