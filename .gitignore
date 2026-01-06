@@ -4,6 +4,8 @@ __pycache__
 pyproject.toml
 .python-version
 
+thinkbrake_output/
 output/
 output_others/
 assets/
+*.tar
