@@ -32,7 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 
 OUTPUT_DIRS = [
     PROJECT_ROOT / "output",
-    PROJECT_ROOT / "output_others",
+    # PROJECT_ROOT / "output_others",
 ]
 
 BENCHMARK_SIZES = {
